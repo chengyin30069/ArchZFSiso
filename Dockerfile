@@ -1,4 +1,3 @@
-#docker run --privileged --network host --rm -it --dns=8.8.8.8 -v "${HOME}/iso/:/ISOBUILD/zfsiso/ISOOUT" archzfsiso bash
 FROM archlinux:latest
 
 RUN pacman -Syu --noconfirm 
