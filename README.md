@@ -1,3 +1,7 @@
+> [!IMPORTANT]
+> The zfs modules may not be able to catch up the kernel release, if such thing happeneds please
+> let me know by creating an issue
+
 # Arch ZFS iso
 
 This is a dockerfile to compile an archlinux installation iso with zfs modules
