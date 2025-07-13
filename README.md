@@ -12,3 +12,8 @@ This is a dockerfile to compile an archlinux installation iso with zfs modules
 1. `docker buildx build -t archzfsiso .`
 2. `docker run --privileged --rm -it -v "${HOME}/iso/:/ISOBUILD/zfsiso/ISOOUT" archzfsiso bash`
 3. `cd zfsiso && mkarchiso -v -w WORK -O ISOOUT .`
+
+## Related works
+
+[Robert Maerz's archlinux-lts-zfs](https://github.com/r-maerz/archlinux-lts-zfs)
+[Jonathan Kirszling's archiso-zfs](https://github.com/eoli3n/archiso-zfs)
