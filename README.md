@@ -19,5 +19,5 @@ This is a dockerfile to compile an archlinux installation iso with zfs modules
 
 ## Related works
 
-[Robert Maerz's archlinux-lts-zfs](https://github.com/r-maerz/archlinux-lts-zfs) \\
+[Robert Maerz's archlinux-lts-zfs](https://github.com/r-maerz/archlinux-lts-zfs) \
 [Jonathan Kirszling's archiso-zfs](https://github.com/eoli3n/archiso-zfs)
