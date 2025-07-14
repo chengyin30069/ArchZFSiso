@@ -1,13 +1,13 @@
 FROM archlinux:latest
 
-RUN pacman -Syu --noconfirm 
-
-RUN pacman -S --noconfirm reflector rsync
+RUN pacman -Syu --noconfirm reflector rsync && \
+    rm /var/cache/pacman/pkg/*
 
 RUN rm /etc/pacman.d/mirrorlist && \
     reflector -f 10 -c Taiwan >> /etc/pacman.d/mirrorlist
 
-RUN pacman -S --noconfirm archiso sudo base-devel git
+RUN pacman -S --noconfirm archiso sudo base-devel git && \
+    rm /var/cache/pacman/pkg/*
 
 RUN useradd -m -G wheel -s /bin/bash builduser && \
     echo "builduser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
