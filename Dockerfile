@@ -52,5 +52,4 @@ RUN chown -R builduser:builduser /ISOBUILD
 
 RUN mkdir -p /run/shm
 
-#RUN cd zfsiso && \
-#    mkarchiso -v -w WORK -o ISOOUT .
+CMD ["sudo", "mkarchiso", "-v", "-w", "zfsiso/WORK", "-o", "zfsiso/ISOOUT", "zfsiso/"]
