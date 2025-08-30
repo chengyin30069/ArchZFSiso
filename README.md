@@ -8,9 +8,8 @@ This is a dockerfile to compile an archlinux installation iso with zfs modules
 
 ## How does this work
 
-1. Boot into `archlinux:latest` docker image
-2. Follow setup steps in this [YT tutorial](https://youtu.be/CcSjnqreUcQ?si=iqtFt0PYebQDER6t)
-3. Run the image interactively and compile manually
+1. Setup `archlinux:latest` docker image with steps in this [YT tutorial](https://youtu.be/CcSjnqreUcQ?si=iqtFt0PYebQDER6t)
+2. Run the image and compile it
 
 ## Compile it yourself
 1. `docker buildx build -t archzfsiso .`
