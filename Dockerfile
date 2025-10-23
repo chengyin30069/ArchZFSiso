@@ -48,8 +48,8 @@ RUN cd /ISOBUILD/zfsiso && \
 
 RUN mkdir -p /ISOBUILD/zfsiso/{WORK,ISOOUT}
 
-RUN chown -R builduser:builduser /ISOBUILD
+# RUN chown -R builduser:builduser /ISOBUILD
 
-RUN mkdir -p /run/shm
+# RUN mkdir -p /run/shm
 
 CMD ["sudo", "mkarchiso", "-v", "-w", "zfsiso/WORK", "-o", "zfsiso/ISOOUT", "zfsiso/"]

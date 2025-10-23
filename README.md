@@ -13,7 +13,7 @@ This is a dockerfile to compile an archlinux installation iso with zfs modules
 
 ## Compile it yourself
 1. `docker buildx build -t archzfsiso .`
-2. `docker run --privileged --rm --user $(id -u):$(id -g) -v "${HOME}/iso/:/ISOBUILD/zfsiso/ISOOUT" archzfsiso`
+2. `docker run --privileged --rm -v "${HOME}/iso/:/ISOBUILD/zfsiso/ISOOUT" archzfsiso`
 
 ## Related works
 
