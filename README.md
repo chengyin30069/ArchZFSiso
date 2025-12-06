@@ -12,8 +12,11 @@ This is a dockerfile to compile an archlinux installation iso with zfs modules
 2. Run the image and compile it
 
 ## Compile it yourself
-1. `docker buildx build -t archzfsiso .`
-2. `docker run --privileged --rm -v "${HOME}/iso/:/ISOBUILD/zfsiso/ISOOUT" archzfsiso`
+```bash
+docker buildx build -t archzfsiso .
+docker run --privileged --rm -v "${HOME}/iso/:/ISOBUILD/zfsiso/ISOOUT" archzfsiso
+```
+
 
 ## Related works
 
