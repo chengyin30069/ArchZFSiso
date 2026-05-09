@@ -4,7 +4,7 @@ RUN pacman -Syu --noconfirm reflector rsync && \
     rm /var/cache/pacman/pkg/*
 
 RUN rm /etc/pacman.d/mirrorlist && \
-    reflector -f 10 >> /etc/pacman.d/mirrorlist
+    reflector -f 10 -c Taiwan --protocol https >> /etc/pacman.d/mirrorlist
 
 RUN pacman -S --noconfirm archiso sudo base-devel git && \
     rm /var/cache/pacman/pkg/*
