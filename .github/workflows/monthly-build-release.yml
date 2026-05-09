@@ -37,7 +37,7 @@ jobs:
           RELEASE_DATE="$(date +'%Y-%m-%d')"
           RELEASE_TIMESTAMP="$(date +'%Y-%m-%d-%H%M')"
 
-          TAG_NAME="monthly-${RELEASE_TIMESTAMP}"
+          TAG_NAME="monthly-${RELEASE_DATE}"
           RELEASE_NAME="Arch ZFS ISO ${RELEASE_DATE}"
 
           echo "release_date=${RELEASE_DATE}" >> "$GITHUB_OUTPUT"
@@ -51,37 +51,47 @@ jobs:
           set -o pipefail
           docker buildx build -t archzfsiso . 2>&1 | tee "${{ github.workspace }}/logs/docker-build.log"
 
-      - name: Collect package versions from image
+      - name: Build ISO and collect package versions
         shell: bash
         run: |
           set -o pipefail
 
-          {
-            echo "## Package versions"
-            echo ""
-            echo "| Package | Version |"
-            echo "|---|---|"
-
-            for pkg in linux linux-lts linux-zen archiso zfs-utils zfs-dkms pacman; do
-              version="$(docker run --rm archzfsiso bash -lc "pacman -Q ${pkg} 2>/dev/null | awk '{print \$2}'" || true)"
-
-              if [ -z "${version}" ]; then
-                version="not installed / not found"
-              fi
-
-              echo "| ${pkg} | ${version} |"
-            done
-          } | tee "${{ github.workspace }}/metadata/package-versions.md"
-
-      - name: Build ISO inside Docker
-        shell: bash
-        run: |
-          set -o pipefail
           docker run \
             --privileged \
             --rm \
             -v "${{ github.workspace }}/iso:/ISOBUILD/zfsiso/ISOOUT" \
-            archzfsiso 2>&1 | tee "${{ github.workspace }}/logs/iso-build.log"
+            -v "${{ github.workspace }}/metadata:/metadata" \
+            archzfsiso \
+            bash -lc '
+              set -euo pipefail
+
+              sudo mkarchiso -v -w zfsiso/WORK -o zfsiso/ISOOUT zfsiso/
+
+              AIROOTFS="/ISOBUILD/zfsiso/WORK/x86_64/airootfs"
+
+              if [ ! -d "${AIROOTFS}" ]; then
+                echo "Cannot find airootfs at ${AIROOTFS}" >&2
+                find /ISOBUILD/zfsiso/WORK -maxdepth 4 -type d | sort >&2 || true
+                exit 1
+              fi
+
+              {
+                echo "## Package versions"
+                echo ""
+                echo "| Package | Version |"
+                echo "|---|---|"
+
+                for pkg in linux linux-lts linux-zen linux-headers archiso zfs-utils zfs-dkms pacman; do
+                  version="$(pacman --root "${AIROOTFS}" -Q "${pkg}" 2>/dev/null | awk "{print \$2}" || true)"
+
+                  if [ -z "${version}" ]; then
+                    version="not installed / not found"
+                  fi
+
+                  echo "| ${pkg} | ${version} |"
+                done
+              } | tee /metadata/package-versions.md
+            ' 2>&1 | tee "${{ github.workspace }}/logs/iso-build.log"
 
       - name: Verify ISO exists
         shell: bash
@@ -123,7 +133,13 @@ jobs:
             echo "- Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo ""
 
-            cat "${{ github.workspace }}/metadata/package-versions.md"
+            if [ -f "${{ github.workspace }}/metadata/package-versions.md" ]; then
+              cat "${{ github.workspace }}/metadata/package-versions.md"
+            else
+              echo "## Package versions"
+              echo ""
+              echo "Package version metadata was not generated."
+            fi
 
             echo ""
             echo "## SHA256"
@@ -182,12 +198,12 @@ jobs:
         run: |
           ISSUE_TITLE="Monthly Arch ZFS ISO build failed - ${{ steps.meta.outputs.release_date }}"
 
-          ISSUE_BODY="$(cat <<'EOF'
+          ISSUE_BODY="$(cat <<EOF
           The automated monthly Arch ZFS ISO build failed.
 
           ## Run info
 
-          - Workflow: `${{ github.workflow }}`
+          - Workflow: \`${{ github.workflow }}\`
           - Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           - Commit: ${{ github.sha }}
           - Branch: ${{ github.ref_name }}
@@ -195,7 +211,7 @@ jobs:
           ## What to check
 
           1. Open the failed workflow run.
-          2. Check `docker-build.log` and `iso-build.log` from the uploaded artifacts.
+          2. Check \`docker-build.log\` and \`iso-build.log\` from the uploaded artifacts.
           3. Common causes:
              - Arch package mirror temporarily broken
              - ZFS package incompatible with current kernel
