@@ -1,4 +1,4 @@
-FROM archlinux:latest
+FROM archlinux:base
 
 RUN pacman -Syu --noconfirm reflector rsync && \
     rm /var/cache/pacman/pkg/*
@@ -38,7 +38,8 @@ RUN cd zfsiso && mkdir zfsrepo && cd zfsrepo && \
 RUN echo "# ZFS custom repo" >> /ISOBUILD/zfsiso/packages.x86_64 && \
     echo "linux-headers" >> /ISOBUILD/zfsiso/packages.x86_64 && \
     echo "zfs-dkms" >> /ISOBUILD/zfsiso/packages.x86_64 && \
-    echo "zfs-utils" >> /ISOBUILD/zfsiso/packages.x86_64
+    echo "zfs-utils" >> /ISOBUILD/zfsiso/packages.x86_64 && \
+	echo "fastfetch" >> /ISOBUILD/zfsiso/packages.x86_64
 
 RUN cd /ISOBUILD/zfsiso && \
     echo "#" && \
@@ -47,9 +48,5 @@ RUN cd /ISOBUILD/zfsiso && \
     echo "Server = file:///ISOBUILD/zfsiso/zfsrepo" >> pacman.conf
 
 RUN mkdir -p /ISOBUILD/zfsiso/{WORK,ISOOUT}
-
-# RUN chown -R builduser:builduser /ISOBUILD
-
-# RUN mkdir -p /run/shm
 
 CMD ["sudo", "mkarchiso", "-v", "-w", "zfsiso/WORK", "-o", "zfsiso/ISOOUT", "zfsiso/"]
