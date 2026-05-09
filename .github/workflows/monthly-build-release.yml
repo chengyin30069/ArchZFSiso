@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
   group: monthly-archzfsiso-release
@@ -24,54 +25,188 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Prepare output directory
+      - name: Prepare directories
         run: |
           mkdir -p "${{ github.workspace }}/iso"
-
-      - name: Build Docker image
-        run: |
-          docker buildx build -t archzfsiso .
-
-      - name: Build ISO inside Docker
-        run: |
-          docker run \
-            --privileged \
-            --rm \
-            -v "${{ github.workspace }}/iso:/ISOBUILD/zfsiso/ISOOUT" \
-            archzfsiso
-
-      - name: List generated files
-        run: |
-          find "${{ github.workspace }}/iso" -maxdepth 2 -type f -print -exec ls -lh {} \;
+          mkdir -p "${{ github.workspace }}/logs"
+          mkdir -p "${{ github.workspace }}/metadata"
 
       - name: Generate release metadata
         id: meta
         run: |
           RELEASE_DATE="$(date +'%Y-%m-%d')"
-          TAG_NAME="monthly-${RELEASE_DATE}"
+          RELEASE_TIMESTAMP="$(date +'%Y-%m-%d-%H%M')"
+
+          TAG_NAME="monthly-${RELEASE_TIMESTAMP}"
           RELEASE_NAME="Arch ZFS ISO ${RELEASE_DATE}"
 
           echo "release_date=${RELEASE_DATE}" >> "$GITHUB_OUTPUT"
+          echo "release_timestamp=${RELEASE_TIMESTAMP}" >> "$GITHUB_OUTPUT"
           echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
           echo "release_name=${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release and upload ISO
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Docker image
+        shell: bash
+        run: |
+          set -o pipefail
+          docker buildx build -t archzfsiso . 2>&1 | tee "${{ github.workspace }}/logs/docker-build.log"
+
+      - name: Collect package versions from image
+        shell: bash
+        run: |
+          set -o pipefail
+
+          {
+            echo "## Package versions"
+            echo ""
+            echo "| Package | Version |"
+            echo "|---|---|"
+
+            for pkg in linux linux-lts linux-zen archiso zfs-utils zfs-dkms pacman; do
+              version="$(docker run --rm archzfsiso bash -lc "pacman -Q ${pkg} 2>/dev/null | awk '{print \$2}'" || true)"
+
+              if [ -z "${version}" ]; then
+                version="not installed / not found"
+              fi
+
+              echo "| ${pkg} | ${version} |"
+            done
+          } | tee "${{ github.workspace }}/metadata/package-versions.md"
+
+      - name: Build ISO inside Docker
+        shell: bash
+        run: |
+          set -o pipefail
+          docker run \
+            --privileged \
+            --rm \
+            -v "${{ github.workspace }}/iso:/ISOBUILD/zfsiso/ISOOUT" \
+            archzfsiso 2>&1 | tee "${{ github.workspace }}/logs/iso-build.log"
+
+      - name: Verify ISO exists
+        shell: bash
         run: |
           shopt -s nullglob
           ISO_FILES=("${{ github.workspace }}"/iso/*.iso)
 
           if [ "${#ISO_FILES[@]}" -eq 0 ]; then
             echo "No ISO file found in ${{ github.workspace }}/iso"
+            echo "Directory content:"
+            find "${{ github.workspace }}/iso" -maxdepth 2 -type f -print -exec ls -lh {} \;
+            exit 1
+          fi
+
+          echo "Generated ISO files:"
+          find "${{ github.workspace }}/iso" -maxdepth 2 -type f -print -exec ls -lh {} \;
+
+      - name: Generate SHA256 checksums
+        shell: bash
+        run: |
+          cd "${{ github.workspace }}/iso"
+
+          sha256sum *.iso | tee "SHA256SUMS"
+
+          for iso in *.iso; do
+            sha256sum "${iso}" > "${iso}.sha256"
+          done
+
+      - name: Generate release notes
+        shell: bash
+        run: |
+          {
+            echo "Automated monthly Arch ZFS ISO build."
+            echo ""
+            echo "## Build info"
+            echo ""
+            echo "- Build date: ${{ steps.meta.outputs.release_date }}"
+            echo "- Commit: ${{ github.sha }}"
+            echo "- Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
+
+            cat "${{ github.workspace }}/metadata/package-versions.md"
+
+            echo ""
+            echo "## SHA256"
+            echo ""
+            echo '```text'
+            cat "${{ github.workspace }}/iso/SHA256SUMS"
+            echo '```'
+            echo ""
+            echo "## Notes"
+            echo ""
+            echo "This ISO was generated automatically by GitHub Actions."
+          } | tee "${{ github.workspace }}/metadata/release-notes.md"
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: archzfsiso-build-artifacts-${{ steps.meta.outputs.release_timestamp }}
+          path: |
+            ${{ github.workspace }}/logs/
+            ${{ github.workspace }}/metadata/
+            ${{ github.workspace }}/iso/*.iso
+            ${{ github.workspace }}/iso/*.sha256
+            ${{ github.workspace }}/iso/SHA256SUMS
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Create GitHub Release and upload ISO
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+
+          RELEASE_FILES=(
+            "${{ github.workspace }}"/iso/*.iso
+            "${{ github.workspace }}"/iso/*.sha256
+            "${{ github.workspace }}"/iso/SHA256SUMS
+          )
+
+          if [ "${#RELEASE_FILES[@]}" -eq 0 ]; then
+            echo "No release files found."
             exit 1
           fi
 
           gh release create "${{ steps.meta.outputs.tag_name }}" \
-            "${ISO_FILES[@]}" \
+            "${RELEASE_FILES[@]}" \
             --title "${{ steps.meta.outputs.release_name }}" \
-            --notes "Automated monthly Arch ZFS ISO build.
+            --notes-file "${{ github.workspace }}/metadata/release-notes.md"
 
-          Built from commit: ${{ github.sha }}
+      - name: Create issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          ISSUE_TITLE="Monthly Arch ZFS ISO build failed - ${{ steps.meta.outputs.release_date }}"
 
-          This release was generated by GitHub Actions."
+          ISSUE_BODY="$(cat <<'EOF'
+          The automated monthly Arch ZFS ISO build failed.
+
+          ## Run info
+
+          - Workflow: `${{ github.workflow }}`
+          - Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - Commit: ${{ github.sha }}
+          - Branch: ${{ github.ref_name }}
+
+          ## What to check
+
+          1. Open the failed workflow run.
+          2. Check `docker-build.log` and `iso-build.log` from the uploaded artifacts.
+          3. Common causes:
+             - Arch package mirror temporarily broken
+             - ZFS package incompatible with current kernel
+             - AUR package build failure
+             - ISO output path changed
+             - GitHub runner timeout
+
+          The build artifacts are uploaded with 30-day retention if the upload step was reached.
+          EOF
+          )"
+
+          gh issue create \
+            --title "${ISSUE_TITLE}" \
+            --body "${ISSUE_BODY}"
