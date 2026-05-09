@@ -37,7 +37,7 @@ jobs:
           RELEASE_DATE="$(date +'%Y-%m-%d')"
           RELEASE_TIMESTAMP="$(date +'%Y-%m-%d-%H%M')"
 
-          TAG_NAME="monthly-${RELEASE_DATE}"
+          TAG_NAME="monthly-${RELEASE_TIMESTAMP}"
           RELEASE_NAME="Arch ZFS ISO ${RELEASE_TIMESTAMP}"
 
           echo "release_date=${RELEASE_DATE}" >> "$GITHUB_OUTPUT"
