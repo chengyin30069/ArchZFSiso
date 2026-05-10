@@ -33,6 +33,7 @@ jobs:
 
       - name: Generate release metadata
         id: meta
+        shell: bash
         run: |
           RELEASE_DATE="$(date +'%Y-%m-%d')"
           RELEASE_TIMESTAMP="$(date +'%Y-%m-%d-%H%M')"
@@ -49,7 +50,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          docker buildx build -t archzfsiso . 2>&1 | tee "${{ github.workspace }}/logs/docker-build.log"
+
+          docker buildx build -t archzfsiso . \
+            2>&1 | tee "${{ github.workspace }}/logs/docker-build.log"
 
       - name: Build ISO and collect package versions
         shell: bash
@@ -71,7 +74,8 @@ jobs:
 
               if [ ! -d "${AIROOTFS}" ]; then
                 echo "Cannot find airootfs at ${AIROOTFS}" >&2
-                find /ISOBUILD/zfsiso/WORK -maxdepth 4 -type d | sort >&2 || true
+                echo "Existing WORK directories:" >&2
+                find /ISOBUILD/zfsiso/WORK -maxdepth 5 -type d | sort >&2 || true
                 exit 1
               fi
 
@@ -81,7 +85,7 @@ jobs:
                 echo "| Package | Version |"
                 echo "|---|---|"
 
-                for pkg in linux linux-lts linux-zen linux-headers archiso zfs-utils zfs-dkms pacman; do
+                for pkg in linux linux-headers linux-lts linux-lts-headers archiso zfs-utils zfs-dkms pacman; do
                   version="$(pacman --root "${AIROOTFS}" -Q "${pkg}" 2>/dev/null | awk "{print \$2}" || true)"
 
                   if [ -z "${version}" ]; then
@@ -91,7 +95,92 @@ jobs:
                   echo "| ${pkg} | ${version} |"
                 done
               } | tee /metadata/package-versions.md
+
+              MODULE_DIRS="$(find "${AIROOTFS}/usr/lib/modules" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort || true)"
+
+              if [ -z "${MODULE_DIRS}" ]; then
+                echo "No kernel module directory found under ${AIROOTFS}/usr/lib/modules" >&2
+                exit 1
+              fi
+
+              echo "${MODULE_DIRS}" | sed "s#${AIROOTFS}/usr/lib/modules/##" | tee /metadata/kernel-versions.txt
+
+              echo "Detected kernel module directories:"
+              cat /metadata/kernel-versions.txt
+
+              if ! pacman --root "${AIROOTFS}" -Q linux-lts >/dev/null 2>&1; then
+                echo "linux-lts is not installed in airootfs" >&2
+                exit 1
+              fi
+
+              if ! pacman --root "${AIROOTFS}" -Q linux-lts-headers >/dev/null 2>&1; then
+                echo "linux-lts-headers is not installed in airootfs" >&2
+                exit 1
+              fi
+
+              if pacman --root "${AIROOTFS}" -Q linux >/dev/null 2>&1; then
+                echo "Unexpected package linux is still installed in airootfs" >&2
+                exit 1
+              fi
+
+              if pacman --root "${AIROOTFS}" -Q linux-headers >/dev/null 2>&1; then
+                echo "Unexpected package linux-headers is still installed in airootfs" >&2
+                exit 1
+              fi
+
+              if ! pacman --root "${AIROOTFS}" -Q zfs-dkms >/dev/null 2>&1; then
+                echo "zfs-dkms is not installed in airootfs" >&2
+                exit 1
+              fi
+
+              if ! pacman --root "${AIROOTFS}" -Q zfs-utils >/dev/null 2>&1; then
+                echo "zfs-utils is not installed in airootfs" >&2
+                exit 1
+              fi
+
+              ZFS_MODULE_COUNT=0
+
+              while IFS= read -r module_dir; do
+                kernel_version="$(basename "${module_dir}")"
+
+                count="$(find "${module_dir}" -type f \
+                  \( \
+                    -name "zfs.ko" \
+                    -o -name "zfs.ko.zst" \
+                    -o -name "zfs.ko.xz" \
+                    -o -name "zfs.ko.gz" \
+                  \) | wc -l)"
+
+                echo "ZFS module count for ${kernel_version}: ${count}"
+
+                ZFS_MODULE_COUNT="$((ZFS_MODULE_COUNT + count))"
+              done <<< "${MODULE_DIRS}"
+
+              if [ "${ZFS_MODULE_COUNT}" -eq 0 ]; then
+                echo "ZFS kernel module was not found in airootfs" >&2
+                echo "Kernel module tree:" >&2
+                find "${AIROOTFS}/usr/lib/modules" -maxdepth 6 -type f | sort >&2 || true
+                exit 1
+              fi
+
+              echo "ZFS kernel module found in airootfs."
             ' 2>&1 | tee "${{ github.workspace }}/logs/iso-build.log"
+
+      - name: Fail on DKMS build warning
+        if: always()
+        shell: bash
+        run: |
+          LOG_FILE="${{ github.workspace }}/logs/iso-build.log"
+
+          if [ ! -f "${LOG_FILE}" ]; then
+            echo "iso-build.log does not exist"
+            exit 1
+          fi
+
+          if grep -E "dkms install .* exited 1|WARNING: .*dkms install|Error! Bad return status for module build|bad exit status|DKMS make.log" "${LOG_FILE}"; then
+            echo "Detected DKMS failure in iso-build.log"
+            exit 1
+          fi
 
       - name: Verify ISO exists
         shell: bash
@@ -142,6 +231,16 @@ jobs:
             fi
 
             echo ""
+
+            if [ -f "${{ github.workspace }}/metadata/kernel-versions.txt" ]; then
+              echo "## Kernel module directories"
+              echo ""
+              echo '```text'
+              cat "${{ github.workspace }}/metadata/kernel-versions.txt"
+              echo '```'
+              echo ""
+            fi
+
             echo "## SHA256"
             echo ""
             echo '```text'
@@ -151,6 +250,17 @@ jobs:
             echo "## Notes"
             echo ""
             echo "This ISO was generated automatically by GitHub Actions."
+            echo ""
+            echo "The workflow explicitly checks that:"
+            echo ""
+            echo "- linux-lts is installed"
+            echo "- linux-lts-headers is installed"
+            echo "- linux is not installed"
+            echo "- linux-headers is not installed"
+            echo "- zfs-dkms is installed"
+            echo "- zfs-utils is installed"
+            echo "- at least one zfs.ko kernel module exists in the generated airootfs"
+            echo "- DKMS failure warnings are not present in iso-build.log"
           } | tee "${{ github.workspace }}/metadata/release-notes.md"
 
       - name: Upload build artifacts
@@ -211,13 +321,30 @@ jobs:
           ## What to check
 
           1. Open the failed workflow run.
-          2. Check \`docker-build.log\` and \`iso-build.log\` from the uploaded artifacts.
-          3. Common causes:
+          2. Download the uploaded artifact if it exists.
+          3. Check these logs:
+             - \`docker-build.log\`
+             - \`iso-build.log\`
+          4. Common causes:
              - Arch package mirror temporarily broken
-             - ZFS package incompatible with current kernel
+             - OpenZFS does not support the current kernel
+             - linux-lts / linux-lts-headers not installed into airootfs
+             - DKMS module build failed
+             - zfs.ko was not generated
              - AUR package build failure
              - ISO output path changed
              - GitHub runner timeout
+
+          ## Expected ISO kernel policy
+
+          This workflow expects the generated ISO to use:
+
+          - \`linux-lts\`
+          - \`linux-lts-headers\`
+          - \`zfs-dkms\`
+          - \`zfs-utils\`
+
+          It also expects the normal \`linux\` and \`linux-headers\` packages to be absent.
 
           The build artifacts are uploaded with 30-day retention if the upload step was reached.
           EOF
