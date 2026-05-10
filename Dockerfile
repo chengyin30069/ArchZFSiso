@@ -1,40 +1,51 @@
-FROM archlinux:base
+FROM archlinux:base AS zfs-builder
 
 RUN pacman -Syu --noconfirm reflector rsync && \
-    rm /var/cache/pacman/pkg/*
+	pacman -Scc --noconfirm
 
 # Get faster mirrorsite, change Taiwan to where ever you live
 RUN rm /etc/pacman.d/mirrorlist && \
     reflector -f 10 -c Taiwan --protocol https >> /etc/pacman.d/mirrorlist
 
-RUN pacman -S --noconfirm archiso sudo base-devel git && \
-    rm /var/cache/pacman/pkg/*
+RUN	pacman -S --noconfirm sudo base-devel git && \
+	pacman -Scc --noconfirm
 
 RUN useradd -m -G wheel -s /bin/bash builduser && \
     echo "builduser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
-WORKDIR /ISOBUILD
-
-RUN cd / && cp -r /usr/share/archiso/configs/releng/ ISOBUILD/ && mv ISOBUILD/releng ISOBUILD/zfsiso
-
-RUN chown -R builduser:builduser /ISOBUILD
+WORKDIR /build
+RUN chown -R builduser:builduser /build
 
 USER builduser
 
 RUN git clone https://aur.archlinux.org/zfs-dkms.git && \
     cd zfs-dkms && \
-    makepkg --skippgpcheck
+    makepkg --skippgpcheck --noconfirm
 
 RUN git clone https://aur.archlinux.org/zfs-utils.git && \
     cd zfs-utils && \
-    makepkg --skippgpcheck
+    makepkg --skippgpcheck --noconfirm
 
-USER root
+FROM archlinux:base AS final
 
-RUN cd zfsiso && mkdir zfsrepo && cd zfsrepo && \
-    cp /ISOBUILD/zfs-dkms/*.zst . && \
-    cp /ISOBUILD/zfs-utils/*.zst . && \
-    repo-add zfsrepo.db.tar.gz *.zst
+RUN pacman -Syu --noconfirm reflector rsync && \
+	pacman -Scc --noconfirm
+
+# Also here
+RUN rm /etc/pacman.d/mirrorlist && \
+    reflector -f 10 -c Taiwan --protocol https >> /etc/pacman.d/mirrorlist
+
+RUN	pacman -Syu --noconfirm sudo archiso && \
+	pacman -Scc --noconfirm
+
+WORKDIR /ISOBUILD
+
+RUN cp -r /usr/share/archiso/configs/releng/ /ISOBUILD/ && mv /ISOBUILD/releng /ISOBUILD/zfsiso
+
+COPY --from=zfs-builder /build/zfs-dkms/*.zst /ISOBUILD/zfsiso/zfsrepo/
+COPY --from=zfs-builder /build/zfs-utils/*.zst /ISOBUILD/zfsiso/zfsrepo/
+
+RUN cd /ISOBUILD/zfsiso/zfsrepo && repo-add zfsrepo.db.tar.gz *.zst
 
 # Switch to linux-lts since zfs are often behind in develop for linux, also switch broadcom-wl to dkms version
 # since it's dependent on original linux kernel
