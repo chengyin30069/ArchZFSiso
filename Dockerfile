@@ -59,11 +59,14 @@ RUN sed -i '/^linux$/d' /ISOBUILD/zfsiso/packages.x86_64 && \
     echo "zfs-utils" >> /ISOBUILD/zfsiso/packages.x86_64 && \
 	echo "fastfetch" >> /ISOBUILD/zfsiso/packages.x86_64
 
-RUN rm /ISOBUILD/zfsiso/airootfs/etc/mkinitcpio.d/linux.preset && \
-	echo "PRESETS=('archiso')" >> /ISOBUILD/zfsiso/airootfs/etc/mkinitcpio.d/linux-lts.preset && \
-	echo "ALL_kver='/boot/vmlinuz-linux-lts'" >> /ISOBUILD/zfsiso/airootfs/etc/mkinitcpio.d/linux-lts.preset && \
-	echo "archiso_config='/etc/mkinitcpio.conf.d/archiso.conf'" >> /ISOBUILD/zfsiso/airootfs/etc/mkinitcpio.d/linux-lts.preset && \
-	echo "archiso_image=\"/boot/initramfs-linux-lts.img\"" >> /ISOBUILD/zfsiso/airootfs/etc/mkinitcpio.d/linux-lts.preset
+RUN mkdir -p /ISOBUILD/zfsiso/airootfs/etc/mkinitcpio.d && \
+    rm -f /ISOBUILD/zfsiso/airootfs/etc/mkinitcpio.d/linux.preset && \
+    printf '%s\n' \
+        "PRESETS=('archiso')" \
+        "ALL_kver='/boot/vmlinuz-linux-lts'" \
+        "archiso_config='/etc/mkinitcpio.conf.d/archiso.conf'" \
+        'archiso_image="/boot/initramfs-linux-lts.img"' \
+        > /ISOBUILD/zfsiso/airootfs/etc/mkinitcpio.d/linux-lts.preset
 
 RUN set -eux; \
     PROFILE="/ISOBUILD/zfsiso"; \
